@@ -1,0 +1,151 @@
+{
+  "success": true,
+  "text": "8\n0316056 04132013\nSeller Client\nAndrewsKirbyandValdez BeckerLtd\n58861GonzalezPrairie 8012StewartSummitApt455\nLakeDaniellefurtIN57228 NorthDouglasAZ95355\nTaxId945822137 TaxId942800517\nIBANGB75MCRL06841367619257\nITEMS\nNo Description Qty UM Netprice Networth VAT Gross\nworth\n1 CLEARANCEFastDellDesktop 300each 2090 600 109 6870\n2007016202086\n1010015104781668\n2 67520701016012000716 500 each 3775 1885 1096 2073\nAMDGX212JC12GHz4GBRAM\nTESTEDREADBELOW?\n3 gamingpcdesktopcomputer 100 each 400 400 1096 4400\n4 120036630710900006 300 each 469 187 1096 14\n0650027017638110208016\n611006086868\n5 0500081060010 500 each 2219 185 1096 1205\n4715457032061120650\n20070016202\n6 DellOptiplex990MTComputer 400 each 26995 107980 1096 11878\n620030201617346128\n21781010010000510020\n7 0600262000086500 500each 16800 880 109 9220\n6007610005460320\n4688\nSUMMARY\n76 VAT Grossworth\n109 567 702 609\nTotal 564017 S56402 620419",
+  "invoice_data": {
+    "invoice_number": [],
+    "date": [],
+    "total": [
+      "564017"
+    ],
+    "seller_name": [
+      "Client"
+    ],
+    "seller_address": [],
+    "seller_phone": [
+      "0316056 041"
+    ],
+    "product_names": [
+      "Qty UM Net",
+      "VAT Grossworth"
+    ],
+    "quantities": [
+      "212",
+      "990",
+      "8",
+      "0316056",
+      "1",
+      "2007016202086",
+      "1010015104781668",
+      "2",
+      "3",
+      "4",
+      "0650027017638110208016",
+      "611006086868",
+      "5",
+      "4715457032061120650",
+      "20070016202",
+      "6",
+      "620030201617346128",
+      "21781010010000510020",
+      "7",
+      "6007610005460320",
+      "4688",
+      "76",
+      "109"
+    ],
+    "unit_prices": [
+      "2090",
+      "3775",
+      "400",
+      "469",
+      "2219",
+      "26995",
+      "16800"
+    ],
+    "vat": [],
+    "discount": [],
+    "total_per_item": [
+      "564017",
+      "8",
+      "04132013",
+      "6870",
+      "2007016202086",
+      "1010015104781668",
+      "2073",
+      "4400",
+      "14",
+      "0650027017638110208016",
+      "611006086868",
+      "1205",
+      "4715457032061120650",
+      "20070016202",
+      "11878",
+      "620030201617346128",
+      "21781010010000510020",
+      "9220",
+      "6007610005460320",
+      "4688",
+      "609",
+      "620419"
+    ]
+  },
+  "table_data": [
+    {
+      "product_name": "1 CLEARANCEFastDellDesktop 300each",
+      "quantity": "2090",
+      "unit_price": "600",
+      "total_price": "109",
+      "vat_amount": "6870"
+    },
+    {
+      "product_name": "2 67520701016012000716 500 each",
+      "quantity": "3775",
+      "unit_price": "1885",
+      "total_price": "1096",
+      "vat_amount": "2073"
+    },
+    {
+      "product_name": "3 gamingpcdesktopcomputer 100 each",
+      "quantity": "400",
+      "unit_price": "400",
+      "total_price": "1096",
+      "vat_amount": "4400"
+    },
+    {
+      "product_name": "4 120036630710900006 300 each",
+      "quantity": "469",
+      "unit_price": "187",
+      "total_price": "1096",
+      "vat_amount": "14"
+    },
+    {
+      "product_name": "5 0500081060010 500 each",
+      "quantity": "2219",
+      "unit_price": "185",
+      "total_price": "1096",
+      "vat_amount": "1205"
+    },
+    {
+      "product_name": "6 DellOptiplex990MTComputer 400 each",
+      "quantity": "26995",
+      "unit_price": "107980",
+      "total_price": "1096",
+      "vat_amount": "11878"
+    },
+    {
+      "product_name": "7 0600262000086500 500each",
+      "quantity": "16800",
+      "unit_price": "880",
+      "total_price": "109",
+      "vat_amount": "9220"
+    },
+    {
+      "product_name": "109",
+      "quantity": "567",
+      "unit_price": "702",
+      "total_price": "609",
+      "vat_amount": ""
+    }
+  ],
+  "analysis_summary": {
+    "found_invoice_number": false,
+    "found_date": false,
+    "found_total": true,
+    "found_seller_info": true,
+    "found_products": true,
+    "found_table": true,
+    "total_products_detected": 8,
+    "completeness_score": 50
+  },
+  "timestamp": "2025-09-21 12:33:43"
+}
