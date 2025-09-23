@@ -1,14 +1,15 @@
 import re
-from typing import Dict, List, Any
+import pandas as pd
+from typing import Dict, List, Any, Optional
 
-def extract_invoice_info(text: str) -> Dict[str, Any]:
+def extract_invoice_info_to_dataframe(text: str) -> Dict[str, Any]:
     """
-    استخراج معلومات الفاتورة باستخدام Regular Expressions
+    Extract invoice information and store in structured format
     """
     
-    # تنظيف النص من الأسطر الفارغة والمسافات الزائدة
+    # Clean text
     text = re.sub(r'\n\s*\n', '\n', text)
-    text = re.sub(r'\s+', ' ', text)
+    lines = text.split('\n')
     
     invoice_data = {
         'invoice_number': [],
@@ -16,102 +17,230 @@ def extract_invoice_info(text: str) -> Dict[str, Any]:
         'total': [],
         'seller_name': [],
         'seller_address': [],
-        'seller_phone': [],
+        'seller_tax_id': [],
+        'client_name': [],
+        'client_address': [],
+        'client_tax_id': [],
         'product_names': [],
         'quantities': [],
         'unit_prices': [],
-        'vat': [],
-        'discount': [],
-        'total_per_item': []
+        'net_worth': [],
+        'vat_percentage': [],
+        'gross_worth': [],
+        'discount': []
     }
     
-    # 1. رقم الفاتورة
-    invoice_number_pattern = r'Invoice\s+no[:\s]*(\d+)'
-    invoice_match = re.search(invoice_number_pattern, text, re.IGNORECASE)
+    # 1. Invoice Number
+    invoice_match = re.search(r'Invoice\s+no:\s*(\d+)', text, re.IGNORECASE)
     if invoice_match:
         invoice_data['invoice_number'].append(invoice_match.group(1))
     
-    # 2. تاريخ الفاتورة
-    date_pattern = r'Date\s+of\s+issue[:\s]*(\d{2}\/\d{2}\/\d{4})'
-    date_match = re.search(date_pattern, text, re.IGNORECASE)
+    # 2. Date
+    date_match = re.search(r'Date\s+of\s+issue:\s*(\d{2}/\d{2}/\d{4})', text)
     if date_match:
         invoice_data['date'].append(date_match.group(1))
     
-    # 3. إجمالي المبلغ
-    total_pattern = r'Total\s+.*?\$\s*(\d+\s*\d+[.,]\d+)'
-    total_match = re.search(total_pattern, text, re.IGNORECASE | re.DOTALL)
-    if total_match:
-        invoice_data['total'].append(total_match.group(1).replace(' ', ''))
+    # 3. Seller Information
+    seller_section = re.search(r'Seller:(.*?)(?=Client:|ITEMS)', text, re.DOTALL | re.IGNORECASE)
+    if seller_section:
+        seller_text = seller_section.group(1).strip()
+        seller_lines = [line.strip() for line in seller_text.split('\n') if line.strip()]
+        
+        if seller_lines:
+            # Seller name (first line)
+            invoice_data['seller_name'].append(seller_lines[0])
+            
+            # Address
+            for line in seller_lines[1:]:
+                if re.match(r'\d+.*[A-Z]{2}\s+\d+', line):
+                    invoice_data['seller_address'].append(line)
+                elif 'Tax Id:' in line:
+                    tax_id = re.search(r'Tax\s+Id:\s*([\d\-]+)', line)
+                    if tax_id:
+                        invoice_data['seller_tax_id'].append(tax_id.group(1))
     
-    # 4. اسم البائع
-    seller_name_pattern = r'Seller[:\s]*([A-Za-z\s,]+?)(?=\d|\n|Tax)'
-    seller_match = re.search(seller_name_pattern, text, re.IGNORECASE)
-    if seller_match:
-        invoice_data['seller_name'].append(seller_match.group(1).strip())
+    # 4. Client Information
+    client_section = re.search(r'Client:(.*?)(?=ITEMS|Tax Id)', text, re.DOTALL)
+    if client_section:
+        client_text = client_section.group(1).strip()
+        client_lines = [line.strip() for line in client_text.split('\n') if line.strip() and 'Tax Id:' not in line]
+        
+        if client_lines:
+            # Client name
+            invoice_data['client_name'].append(client_lines[0])
+            
+            # Client address
+            for line in client_lines[1:]:
+                if re.match(r'.*[A-Z]{2}\s+\d+', line):
+                    invoice_data['client_address'].append(line)
     
-    # 5. عنوان البائع
-    seller_address_pattern = r'(\d+\s+[A-Za-z\s]+(?:Lake|Street|Ave|Road|Blvd)[A-Za-z\s,]*[A-Z]{2}\s+\d+)'
-    seller_address_match = re.search(seller_address_pattern, text)
-    if seller_address_match:
-        invoice_data['seller_address'].append(seller_address_match.group(1))
+    # Client Tax ID
+    client_tax = re.search(r'Client:.*?Tax\s+Id:\s*([\d\-]+)', text, re.DOTALL)
+    if client_tax:
+        invoice_data['client_tax_id'].append(client_tax.group(1))
     
-    # 6. هاتف البائع (Tax ID في هذه الحالة)
-    phone_pattern = r'Tax\s+Id[:\s]*(\d{3}-\d{2}-\d{4})'
-    phone_match = re.search(phone_pattern, text, re.IGNORECASE)
-    if phone_match:
-        invoice_data['seller_phone'].append(phone_match.group(1))
+    # 5. Extract Items
+    items_section = re.search(r'ITEMS(.*?)SUMMARY', text, re.DOTALL)
+    if items_section:
+        items_text = items_section.group(1)
+        
+        item_lines = []
+        current_item = ""
+        
+        for line in items_text.split('\n'):
+            line = line.strip()
+            if not line or line.startswith('No.') or line.startswith('---'):
+                continue
+            
+            # New item starts with number and dot
+            if re.match(r'^\d+\.', line):
+                if current_item:
+                    item_lines.append(current_item.strip())
+                current_item = line
+            else:
+                # Add to current item
+                current_item += " " + line
+        
+        # Add last item
+        if current_item:
+            item_lines.append(current_item.strip())
+        
+        # Process each item line
+        for item_line in item_lines:
+            # Extract numbers from the end
+            numbers = re.findall(r'\d+[.,]\d+|\d+%', item_line)
+            if len(numbers) >= 5:
+                # Extract description (everything before numbers)
+                desc_match = re.match(r'^(\d+)\.\s+(.+?)\s+(?=\d+[.,]\d+\s+each)', item_line)
+                if desc_match:
+                    description = desc_match.group(2).strip()
+                    invoice_data['product_names'].append(description)
+                    
+                    # Extract numbers in order
+                    invoice_data['quantities'].append(float(numbers[0].replace(',', '.')))
+                    invoice_data['unit_prices'].append(float(numbers[1].replace(',', '.')))
+                    invoice_data['net_worth'].append(float(numbers[2].replace(',', '.')))
+                    
+                    # VAT percentage
+                    vat_pct = next((num for num in numbers if '%' in num), '10%')
+                    invoice_data['vat_percentage'].append(vat_pct)
+                    
+                    # Gross worth (last number)
+                    invoice_data['gross_worth'].append(float(numbers[-1].replace(',', '.')))
     
-    # 7. أسماء المنتجات
-    product_pattern = r'^\d+\.\s+([A-Za-z\s!]+?)(?=\s+\d+[.,]\d+\s+each|\s+each)'
-    products = re.findall(product_pattern, text, re.MULTILINE)
-    # تنظيف أسماء المنتجات
-    cleaned_products = []
-    for product in products:
-        # إزالة المواصفات التقنية
-        clean_product = re.sub(r'[A-Z]{2,}\s+[A-Z]{2}[-\d]+[A-Z]*.*$', '', product)
-        clean_product = re.sub(r'\b(?:PC|Computer|Desktop|WINDOWS|AMD|DUAL|CORE|RAM|HD|Pro|MT|GHz|GB|TB)\b.*$', '', clean_product, flags=re.IGNORECASE)
-        clean_product = clean_product.strip()
-        if clean_product:
-            cleaned_products.append(clean_product)
-    invoice_data['product_names'] = cleaned_products
-    
-    # 8. الكميات
-    quantity_pattern = r'^\d+\.\s+.*?\s+(\d+[.,]\d+)\s+each'
-    quantities = re.findall(quantity_pattern, text, re.MULTILINE)
-    invoice_data['quantities'] = quantities
-    
-    # 9. أسعار الوحدة
-    unit_price_pattern = r'each\s+(\d+[.,]\d+)'
-    unit_prices = re.findall(unit_price_pattern, text)
-    invoice_data['unit_prices'] = unit_prices
-    
-    # 10. ضريبة القيمة المضافة
-    vat_pattern = r'VAT\s+\[%\]\s+(\d+%)'
-    vat_matches = re.findall(vat_pattern, text)
-    if vat_matches:
-        invoice_data['vat'] = list(set(vat_matches))  # إزالة التكرار
-    
-    # 11. الخصم (غير موجود في هذه الفاتورة)
-    discount_pattern = r'[Dd]iscount[:\s]*(\d+[.,]\d+)'
-    discount_matches = re.findall(discount_pattern, text)
-    invoice_data['discount'] = discount_matches
-    
-    # 12. إجمالي لكل عنصر
-    total_per_item_pattern = r'(\d+\s*\d+[.,]\d+)(?=\s*$|\s*10%)'
-    total_per_item = re.findall(total_per_item_pattern, text, re.MULTILINE)
-    # تنظيف وتحويل الأرقام
-    cleaned_totals = []
-    for total in total_per_item:
-        clean_total = total.replace(' ', '')
-        if re.match(r'\d+[.,]\d+$', clean_total):
-            cleaned_totals.append(clean_total)
-    invoice_data['total_per_item'] = cleaned_totals
+    # 6. Total
+    summary_section = re.search(r'SUMMARY(.*?)$', text, re.DOTALL)
+    if summary_section:
+        summary_text = summary_section.group(1)
+        total_match = re.search(r'Total\s+.*?\$\s*(\d+\s*\d+[.,]\d+)', summary_text)
+        if total_match:
+            total_value = float(total_match.group(1).replace(' ', '').replace(',', '.'))
+            invoice_data['total'].append(total_value)
     
     return invoice_data
 
-# مثال على الاستخدام
-sample_text = """
+def create_invoice_dataframes(data: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
+    """
+    Create structured DataFrames from extracted invoice data
+    """
+    
+    # Invoice Header Information
+    header_data = {
+        'Field': ['Invoice Number', 'Date', 'Total Amount', 'Seller Name', 'Seller Address', 'Seller Tax ID', 
+                  'Client Name', 'Client Address', 'Client Tax ID'],
+        'Value': [
+            data['invoice_number'][0] if data['invoice_number'] else None,
+            data['date'][0] if data['date'] else None,
+            data['total'][0] if data['total'] else None,
+            data['seller_name'][0] if data['seller_name'] else None,
+            data['seller_address'][0] if data['seller_address'] else None,
+            data['seller_tax_id'][0] if data['seller_tax_id'] else None,
+            data['client_name'][0] if data['client_name'] else None,
+            data['client_address'][0] if data['client_address'] else None,
+            data['client_tax_id'][0] if data['client_tax_id'] else None
+        ]
+    }
+    
+    header_df = pd.DataFrame(header_data)
+    
+    # Items DataFrame
+    items_data = {
+        'Item_No': list(range(1, len(data['product_names']) + 1)),
+        'Product_Name': data['product_names'],
+        'Quantity': data['quantities'],
+        'Unit_Price': data['unit_prices'],
+        'Net_Worth': data['net_worth'],
+        'VAT_Percentage': data['vat_percentage'],
+        'Gross_Worth': data['gross_worth']
+    }
+    
+    items_df = pd.DataFrame(items_data)
+    
+    # Summary DataFrame
+    if items_df.empty:
+        summary_data = {
+            'Metric': ['Total Net Worth', 'Total VAT', 'Total Gross Worth'],
+            'Value': [0, 0, 0]
+        }
+    else:
+        total_net = items_df['Net_Worth'].sum()
+        total_gross = items_df['Gross_Worth'].sum()
+        total_vat = total_gross - total_net
+        
+        summary_data = {
+            'Metric': ['Total Net Worth', 'Total VAT', 'Total Gross Worth'],
+            'Value': [total_net, total_vat, total_gross]
+        }
+    
+    summary_df = pd.DataFrame(summary_data)
+    
+    return {
+        'header': header_df,
+        'items': items_df,
+        'summary': summary_df
+    }
+
+def display_dataframes(dataframes: Dict[str, pd.DataFrame]):
+    """
+    Display all DataFrames in a formatted way
+    """
+    print("INVOICE HEADER INFORMATION")
+    print("=" * 50)
+    print(dataframes['header'].to_string(index=False))
+    
+    print("\n\nINVOICE ITEMS")
+    print("=" * 80)
+    print(dataframes['items'].to_string(index=False))
+    
+    print("\n\nINVOICE SUMMARY")
+    print("=" * 30)
+    print(dataframes['summary'].to_string(index=False))
+
+def save_to_excel(dataframes: Dict[str, pd.DataFrame], filename: str = 'invoice_data.xlsx'):
+    """
+    Save all DataFrames to Excel file with separate sheets
+    """
+    with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+        dataframes['header'].to_excel(writer, sheet_name='Header', index=False)
+        dataframes['items'].to_excel(writer, sheet_name='Items', index=False)
+        dataframes['summary'].to_excel(writer, sheet_name='Summary', index=False)
+    
+    print(f"Data saved to {filename}")
+
+def save_to_csv(dataframes: Dict[str, pd.DataFrame], prefix: str = 'invoice'):
+    """
+    Save DataFrames to separate CSV files
+    """
+    dataframes['header'].to_csv(f'{prefix}_header.csv', index=False)
+    dataframes['items'].to_csv(f'{prefix}_items.csv', index=False)
+    dataframes['summary'].to_csv(f'{prefix}_summary.csv', index=False)
+    
+    print(f"Data saved to CSV files: {prefix}_header.csv, {prefix}_items.csv, {prefix}_summary.csv")
+
+# Invoice text from the image
+invoice_text = """
 Invoice no: 51109338
+
 Date of issue: 04/13/2013
 
 Seller:                                    Client:
@@ -123,6 +252,7 @@ Tax Id: 945-82-2137                       Tax Id: 942-80-0517
 IBAN: GB75MCRL06841367619257
 
 ITEMS
+
 No.    Description                         Qty    UM     Net price    Net worth    VAT [%]    Gross worth
 
 1.     CLEARANCE! Fast Dell Desktop        3.00   each   209.00       627.00       10%        689.70
@@ -152,37 +282,29 @@ No.    Description                         Qty    UM     Net price    Net worth 
        4GB | 500GB
 
 SUMMARY
+
                                           VAT [%]    Net worth    VAT      Gross worth
                                           10%        5640.17      564.02   6204.19
+
 Total                                               $ 5640.17    $ 564.02  $ 6204.19
 """
 
-# تشغيل الاستخراج
-result = extract_invoice_info(sample_text)
+# Extract data and create DataFrames
+print("Extracting invoice data...")
+extracted_data = extract_invoice_info_to_dataframe(invoice_text)
 
-# طباعة النتائج
-print("=== معلومات الفاتورة المستخرجة ===\n")
-for key, value in result.items():
-    if value:  # طباعة فقط الحقول التي تحتوي على بيانات
-        print(f"{key}: {value}")
+print("Creating DataFrames...")
+dataframes = create_invoice_dataframes(extracted_data)
 
-# دالة لعرض النتائج بشكل منظم
-def display_results(data):
-    print("\n=== تفاصيل مفصلة ===")
-    print(f"رقم الفاتورة: {data['invoice_number'][0] if data['invoice_number'] else 'غير موجود'}")
-    print(f"التاريخ: {data['date'][0] if data['date'] else 'غير موجود'}")
-    print(f"اسم البائع: {data['seller_name'][0] if data['seller_name'] else 'غير موجود'}")
-    print(f"عنوان البائع: {data['seller_address'][0] if data['seller_address'] else 'غير موجود'}")
-    print(f"هاتف البائع: {data['seller_phone'][0] if data['seller_phone'] else 'غير موجود'}")
-    print(f"المجموع الكلي: {data['total'][0] if data['total'] else 'غير موجود'}")
-    print(f"ضريبة القيمة المضافة: {', '.join(data['vat']) if data['vat'] else 'غير موجود'}")
-    
-    print("\n=== المنتجات ===")
-    for i, product in enumerate(data['product_names']):
-        qty = data['quantities'][i] if i < len(data['quantities']) else 'غير محدد'
-        price = data['unit_prices'][i] if i < len(data['unit_prices']) else 'غير محدد'
-        total = data['total_per_item'][i] if i < len(data['total_per_item']) else 'غير محدد'
-        print(f"{i+1}. {product}")
-        print(f"   الكمية: {qty} | السعر: {price} | الإجمالي: {total}")
+# Display results
+display_dataframes(dataframes)
 
-display_results(result)
+# Uncomment to save data
+# save_to_excel(dataframes, 'invoice_51109338.xlsx')
+# save_to_csv(dataframes, 'invoice_51109338')
+
+print("\n\nDataFrames created successfully!")
+print("Available DataFrames:")
+print("- dataframes['header']: Invoice header information")
+print("- dataframes['items']: Product details")
+print("- dataframes['summary']: Financial summary")
