@@ -36,7 +36,7 @@ def extract_invoice_info_to_dataframe(text: str) -> Dict[str, Any]:
         invoice_data['invoice_number'].append(invoice_match.group(1))
     
     # 2. Date
-    date_match = re.search(r'Date\s+of\s+issue:\s*(\d{2}/\d{2}/\d{4})', text)
+    date_match = re.search(r'Date\s+of\s+issue:\s*(\d{2}/\d{2}/\d{4})', text, re.IGNORECASE)
     if date_match:
         invoice_data['date'].append(date_match.group(1))
     
