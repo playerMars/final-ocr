@@ -238,56 +238,7 @@ def save_to_csv(dataframes: Dict[str, pd.DataFrame], prefix: str = 'invoice'):
     print(f"Data saved to CSV files: {prefix}_header.csv, {prefix}_items.csv, {prefix}_summary.csv")
 
 # Invoice text from the image
-invoice_text = """
-Invoice no: 51109338
-
-Date of issue: 04/13/2013
-
-Seller:                                    Client:
-Andrews, Kirby and Valdez                  Becker Ltd
-58861 Gonzalez Prairie                     8012 Stewart Summit Apt. 455
-Lake Daniellefurt, IN 57228               North Douglas, AZ 95355
-
-Tax Id: 945-82-2137                       Tax Id: 942-80-0517
-IBAN: GB75MCRL06841367619257
-
-ITEMS
-
-No.    Description                         Qty    UM     Net price    Net worth    VAT [%]    Gross worth
-
-1.     CLEARANCE! Fast Dell Desktop        3.00   each   209.00       627.00       10%        689.70
-       Computer PC DUAL CORE
-       WINDOWS 10 4/8/16GB RAM
-
-2.     HP T520 Thin Client Computer        5.00   each   37.75        188.75       10%        207.63
-       AMD GX-212JC 1.2GHz 4GB RAM
-       TESTED !IREAD BELOW!!
-
-3.     gaming pc desktop computer          1.00   each   400.00       400.00       10%        440.00
-
-4.     12-Core Gaming Computer             3.00   each   464.89       1394.67      10%        1534.14
-       Desktop PC Tower Affordable
-       GAMING PC 8GB AMD Vega RGB
-
-5.     Custom Build Dell Optiplex 9020    5.00   each   221.99       1109.95      10%        1220.95
-       MT i5-4570 3.20GHz Desktop
-       Computer PC
-
-6.     Dell Optiplex 990 MT Computer       4.00   each   269.95       1079.80      10%        1187.78
-       PC Quad Core i7 3.4GHz 16GB
-       2TB HD Windows 10 Pro
-
-7.     Dell Core 2 Duo Desktop            5.00   each   168.00       840.00       10%        924.00
-       Computer | Windows XP Pro |
-       4GB | 500GB
-
-SUMMARY
-
-                                          VAT [%]    Net worth    VAT      Gross worth
-                                          10%        5640.17      564.02   6204.19
-
-Total                                               $ 5640.17    $ 564.02  $ 6204.19
-"""
+invoice_text = 
 
 # Extract data and create DataFrames
 print("Extracting invoice data...")
