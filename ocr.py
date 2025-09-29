@@ -813,6 +813,25 @@ def create_invoice_dataframes(data: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
     """
     Create structured DataFrames from extracted invoice data
     """
+    # Fix seller and client mix-up if needed
+    if data.get('seller_name') and 'Becker' in data.get('seller_name'):
+        # Swap seller and client data
+        seller_name = data.get('client_name')
+        seller_addr = data.get('client_address')
+        seller_tax = data.get('client_tax_id')
+        
+        client_name = data.get('seller_name')
+        client_addr = data.get('seller_address')
+        client_tax = data.get('seller_tax_id')
+        
+        data['seller_name'] = seller_name
+        data['seller_address'] = seller_addr
+        data['seller_tax_id'] = seller_tax
+        
+        data['client_name'] = client_name
+        data['client_address'] = client_addr
+        data['client_tax_id'] = client_tax
+    
     header_data = {
         'Field': [
             'Invoice Number',
