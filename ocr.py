@@ -1,4 +1,5 @@
 import re
+import os
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple
 import pytesseract
@@ -10,7 +11,13 @@ def preprocess_image(image_path: str) -> Tuple[np.ndarray, np.ndarray]:
     """
     Preprocess image to improve OCR accuracy - returns multiple versions
     """
+    # Clear any existing windows and cached memory
+    cv2.destroyAllWindows()
+    
+    # Read image with fresh handle
     img = cv2.imread(image_path)
+    if img is None:
+        raise ValueError(f"Failed to load image: {image_path}")
     
     # Convert to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -40,6 +47,20 @@ def extract_text_from_image(image_path: str) -> str:
     Extract text from image using OCR with multiple attempts
     """
     try:
+        # Clear any cached images
+        cv2.destroyAllWindows()
+        
+        # Verify the image exists
+        if not os.path.exists(image_path):
+            print(f"Error: Image file not found: {image_path}")
+            return ""
+            
+        # Read image with a fresh handle
+        img = cv2.imread(image_path)
+        if img is None:
+            print(f"Error: Could not read image: {image_path}")
+            return ""
+            
         processed_img, original_gray = preprocess_image(image_path)
         
         # Try multiple OCR configurations
@@ -719,45 +740,125 @@ def parse_totals(text: str, items: List[Dict[str, Any]]) -> Dict[str, float]:
     summary_section = extract_section(text, r'SUMMARY')
     
     if summary_section:
-        total_pattern = r'Total\s+.*?\$?\s*([\d\s,]+\.?\d+)\s+\$?\s*([\d\s,]+\.?\d+)\s+\$?\s*([\d\s,]+\.?\d+)'
-        match = re.search(total_pattern, summary_section, re.IGNORECASE)
+        print("\nDebug - Summary section found:")
+        print("-" * 50)
+        print(summary_section)
+        print("-" * 50)
         
-        if match:
-            try:
-                totals['net_worth'] = float(match.group(1).replace(' ', '').replace(',', ''))
-                totals['vat'] = float(match.group(2).replace(' ', '').replace(',', ''))
-                totals['gross_worth'] = float(match.group(3).replace(' ', '').replace(',', ''))
-            except ValueError:
-                pass
+        # Try to find the total line with all values
+        total_patterns = [
+            # Pattern for format: "Total $ X $ Y $ Z"
+            r'Total\s*\$?\s*([\d\s,.]+)\s*\$?\s*([\d\s,.]+)\s*\$?\s*([\d\s,.]+)',
+            r'Total.*?\$\s*([\d\s,.]+)\s*\$\s*([\d\s,.]+)\s*\$\s*([\d\s,.]+)',
+            # Pattern for format with headers and values in separate lines
+            r'Net\s*worth\s*[\r\n]+\$?\s*([\d\s,.]+)[\r\n]+.*?VAT\s*[\r\n]+\$?\s*([\d\s,.]+)[\r\n]+.*?Gross\s*worth\s*[\r\n]+\$?\s*([\d\s,.]+)',
+            r'Total\s*Net\s*worth\s*VAT\s*Gross\s*worth.*?\$\s*([\d\s,.]+)\s*\$\s*([\d\s,.]+)\s*\$\s*([\d\s,.]+)',
+            # Pattern for totals with headers
+            r'Net\s*worth[^\d]+([\d\s,.]+)[^\d]+VAT[^\d]+([\d\s,.]+)[^\d]+Gross\s*worth[^\d]+([\d\s,.]+)'
+        ]
         
+        for pattern in total_patterns:
+            match = re.search(pattern, summary_section, re.IGNORECASE | re.DOTALL)
+            if match:
+                try:
+                    def convert_number(num_str: str) -> float:
+                        # Remove spaces, currency symbols and any other non-numeric characters except . and ,
+                        num_str = re.sub(r'[^\d,.]', '', num_str.strip())
+                        
+                        # If empty string, return 0
+                        if not num_str:
+                            return 0.0
+                            
+                        # If there are both commas and dots
+                        if ',' in num_str and '.' in num_str:
+                            # If comma is after dot (e.g., 1.234,56)
+                            if num_str.index('.') < num_str.index(','):
+                                num_str = num_str.replace('.', '')  # Remove thousand separators
+                                num_str = num_str.replace(',', '.')  # Convert decimal separator
+                            else:  # If comma is before dot (e.g., 1,234.56)
+                                num_str = num_str.replace(',', '')  # Remove thousand separators
+                        # If there's only comma
+                        elif ',' in num_str:
+                            # Check the position of the comma from the right
+                            digits_after_comma = len(num_str.split(',')[-1])
+                            # If 2 digits after comma, it's probably a decimal separator
+                            if digits_after_comma == 2:
+                                num_str = num_str.replace(',', '.')
+                            else:  # It's a thousand separator
+                                num_str = num_str.replace(',', '')
+                        
+                        try:
+                            result = float(num_str)
+                            # If result is too large, it might be a parsing error
+                            if result > 1000000:
+                                print(f"Warning: Very large number detected: {result}")
+                            return result
+                        except ValueError:
+                            print(f"Warning: Could not convert '{num_str}' to float")
+                            return 0.0
+                    
+                    net = convert_number(match.group(1))
+                    vat = convert_number(match.group(2))
+                    gross = convert_number(match.group(3))
+                    
+                    print(f"\nDebug - Found totals in summary:")
+                    print(f"Net: {net}")
+                    print(f"VAT: {vat}")
+                    print(f"Gross: {gross}")
+                    
+                    # التحقق من صحة الحسابات
+                    if abs(gross - (net + vat)) < 0.1:  # نسمح بفرق صغير للتقريب
+                        totals['net_worth'] = net
+                        totals['vat'] = vat
+                        totals['gross_worth'] = gross
+                        break
+                    else:
+                        print(f"Warning: Totals don't add up correctly: {net} + {vat} != {gross}")
+                except ValueError as e:
+                    print(f"Warning: Error converting numbers: {e}")
+                    continue
+        
+        # If total line not found, try to find individual values
         if not totals:
             patterns = {
                 'net_worth': [
-                    r'(?:Net\s+worth|Subtotal).*?\$?\s*([\d\s,]+\.?\d+)',
+                    r'Total.*?Net\s*worth.*?(\d[\d\s,]*\.?\d*)',
+                    r'Net\s*worth.*?(\d[\d\s,]*\.?\d*)',
+                    r'Subtotal.*?(\d[\d\s,]*\.?\d*)',
                 ],
                 'vat': [
-                    r'VAT.*?\$?\s*([\d\s,]+\.?\d+)',
+                    r'VAT.*?(\d[\d\s,]*\.?\d*)',
+                    r'Tax.*?(\d[\d\s,]*\.?\d*)',
                 ],
                 'gross_worth': [
-                    r'(?:Gross\s+worth|Total).*?\$\s*([\d\s,]+\.?\d+)',
+                    r'Gross\s*worth.*?(\d[\d\s,]*\.?\d*)',
+                    r'Total.*?(\d[\d\s,]*\.?\d*)$',
                 ]
             }
             
             for key, pattern_list in patterns.items():
                 for pattern in pattern_list:
-                    match = re.search(pattern, summary_section, re.IGNORECASE)
+                    match = re.search(pattern, summary_section, re.IGNORECASE | re.DOTALL)
                     if match:
                         try:
-                            value = float(match.group(1).replace(' ', '').replace(',', ''))
+                            value_str = match.group(1).replace(' ', '').replace(',', '')
+                            value = float(value_str)
                             totals[key] = value
+                            print(f"Debug - Found {key}: {value}")
                             break
                         except ValueError:
                             continue
     
+    # If we still don't have totals but we have items, calculate from items
     if not totals and items:
+        print("\nDebug - Calculating totals from items:")
         total_net = sum(item['net_worth'] for item in items)
         total_gross = sum(item['gross_worth'] for item in items)
         total_vat = total_gross - total_net
+        
+        print(f"Calculated Net: {total_net}")
+        print(f"Calculated VAT: {total_vat}")
+        print(f"Calculated Gross: {total_gross}")
         
         totals = {
             'net_worth': round(total_net, 2),
@@ -870,19 +971,27 @@ def create_invoice_dataframes(data: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
                                         'Unit_Price', 'Net_Worth', 'VAT_Percentage', 
                                         'Gross_Worth'])
     
-    if not items_df.empty:
+    # Get totals directly from the extracted data
+    totals = data.get('totals', {})
+    total_net = totals.get('net_worth', 0)
+    total_vat = totals.get('vat', 0)
+    total_gross = totals.get('gross_worth', 0)
+    
+    # If no totals were found in the summary, only then calculate from items
+    if total_net == 0 and total_vat == 0 and total_gross == 0 and not items_df.empty:
+        print("\nDebug - No totals found in summary, calculating from items")
         total_net = items_df['Net_Worth'].sum()
         total_gross = items_df['Gross_Worth'].sum()
         total_vat = total_gross - total_net
-    else:
-        totals = data.get('totals', {})
-        total_net = totals.get('net_worth', 0)
-        total_gross = totals.get('gross_worth', 0)
-        total_vat = totals.get('vat', 0)
     
+    # Format numbers with thousand separator and 2 decimal places
     summary_df = pd.DataFrame({
         'Metric': ['Total Net Worth', 'Total VAT', 'Total Gross Worth'],
-        'Value': [total_net, total_vat, total_gross]
+        'Value': [
+            '{:,.2f}'.format(total_net),
+            '{:,.2f}'.format(total_vat),
+            '{:,.2f}'.format(total_gross)
+        ]
     })
     
     return {
@@ -941,6 +1050,11 @@ def process_invoice_image(image_path: str, save_excel: bool = False,
     Complete pipeline to process invoice image
     """
     try:
+        # Clear any existing cache
+        cv2.destroyAllWindows()
+        if hasattr(pytesseract, 'cleanup'):
+            pytesseract.cleanup()
+            
         if manual_text:
             print("Using manually provided text...")
             text = clean_text(manual_text)
@@ -1004,7 +1118,9 @@ def process_invoice_image(image_path: str, save_excel: bool = False,
 
 # Example usage
 if __name__ == "__main__":
-    image_path = r"C:\Users\user\Desktop\final ocr\batch1-0001.jpg"
+    image_path = r"C:\Users\user\Desktop\final ocr\batch1-0027.jpg"  # تحديث المسار
+    
+    print(f"\nProcessing image: {image_path}")  # طباعة المسار للتأكد
     
     # Option 1: Process from image with OCR
     dataframes = process_invoice_image(
