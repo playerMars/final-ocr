@@ -63,34 +63,23 @@ def extract_text_from_image(image_path: str) -> str:
             
         processed_img, original_gray = preprocess_image(image_path)
         
-        # Try multiple OCR configurations
-        configs = [
-            r'--oem 1 --psm 6',
-            r'--oem 3 --psm 6',
-            r'--oem 1 --psm 4',
-            r'--oem 1 --psm 3',
-        ]
+        # Use single optimized OCR configuration for invoices
+        config = r'--oem 1 --psm 6'  # LSTM engine with uniform text block assumption
         
-        best_text = ""
-        max_length = 0
-        
-        # Try with processed image
-        for config in configs:
-            try:
-                text = pytesseract.image_to_string(processed_img, config=config, lang='eng')
-                if len(text) > max_length:
-                    max_length = len(text)
-                    best_text = text
-            except:
-                continue
+        try:
+            best_text = pytesseract.image_to_string(processed_img, config=config, lang='eng')
+        except Exception as e:
+            print(f"Warning: OCR failed with primary configuration: {e}")
+            best_text = ""
         
         # Also try with original grayscale
-        try:
-            text = pytesseract.image_to_string(original_gray, config=r'--oem 1 --psm 6', lang='eng')
-            if len(text) > max_length:
-                best_text = text
-        except:
-            pass
+        if len(best_text) < 100:  # Try grayscale if processed image gave poor results
+            try:
+                text = pytesseract.image_to_string(original_gray, config=config, lang='eng')
+                if len(text) > len(best_text):
+                    best_text = text
+            except Exception as e:
+                print(f"Warning: OCR failed with grayscale image: {e}")
         
         # Try with PIL Image as fallback
         if len(best_text) < 100:
@@ -269,25 +258,50 @@ def parse_party_info(text: str, party_type: str) -> Dict[str, str]:
 
 def parse_simple_item_line(line: str) -> Optional[Dict[str, Any]]:
     """
-    Fallback parser for simpler item lines
+    Parser for simple item lines with basic format
     """
     try:
-        # Clean the line
+        # Clean and normalize the line
         line = re.sub(r'\s+', ' ', line).strip()
         
-        # Extract item number
-        item_no = 1
-        num_match = re.match(r'^(\d+)[\.)\s]', line)
-        if num_match:
-            item_no = int(num_match.group(1))
-            line = line[len(num_match.group(0)):].strip()
+        # Try different patterns
+        patterns = [
+            # Pattern 1: Full format with all fields
+            r'^(\d+)[\.)\s]+(.*?)\s+(\d+(?:[.,]\d+)?)\s*(?:each\s+)?(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+)%\s+(\d+(?:[.,]\d+)?)',
+            # Pattern 2: Simple format with quantity and price
+            r'^(\d+)[\.)\s]+(.*?)\s+(\d+(?:[.,]\d+)?)\s*(?:each\s+)?(\d+(?:[.,]\d+)?)',
+            # Pattern 3: Format with final total only
+            r'^(\d+)[\.)\s]+(.*?)\s+(\d+(?:[.,]\d+)?)\s*(?:each\s+)?\s*(\d+(?:[.,]\d+)?)'
+        ]
         
-        # Find all numbers in the line
-        numbers = re.findall(r'\d+(?:[.,]\d+)?(?:\s*%)?', line)
-        numbers = [n.replace(',', '.') for n in numbers]
+        for pattern in patterns:
+            match = re.match(pattern, line)
         
-        if len(numbers) < 2:
+        if not match:
             return None
+            
+        item_no = int(match.group(1))
+        description = match.group(2).strip()
+        quantity = float(match.group(3).replace(',', '.'))
+        unit_price = float(match.group(4).replace(',', '.'))
+        vat = match.group(5) if match.group(5) else "10"
+        
+        # Calculate or use provided total
+        net_worth = float(match.group(6).replace(',', '.')) if match.group(6) else quantity * unit_price
+        
+        # Calculate gross worth with VAT
+        vat_rate = float(vat) / 100
+        gross_worth = round(net_worth * (1 + vat_rate), 2)
+        
+        return {
+            'item_no': item_no,
+            'description': description,
+            'quantity': quantity,
+            'unit_price': unit_price,
+            'net_worth': net_worth,
+            'vat_percentage': f"{vat}%",
+            'gross_worth': gross_worth
+        }
             
         # Extract description (text before the last 2-5 numbers)
         desc_pattern = r'^(.*?)(?=\s*\d+(?:[.,]\d+)?\s*(?:each|pc|pcs|units?)?\s*$)'
@@ -346,21 +360,66 @@ def parse_item_line(line: str) -> Optional[Dict[str, Any]]:
         
         item_no = int(item_num_match.group(1))
         
-        # Look for the pattern: quantity + "each" + price
-        qty_price_match = re.search(r'(\d+[,.]?\d*)\s*each\s+(\d+[,.]?\d*)', line)
+        # Look for the pattern: quantity + "each" + price (with possible thousand separators)
+        qty_price_match = re.search(r'(\d+[,.]?\d*)\s*each\s+(\d{1,3}(?:[., ]\d{3})*(?:[,.]\d+)?)', line)
         if not qty_price_match:
             return None
             
         # Extract the main components
-        qty = float(qty_price_match.group(1).replace(',', '.'))
-        unit_price = float(qty_price_match.group(2).replace(',', '.'))
+        qty_str = qty_price_match.group(1).replace(' ', '')
+        price_str = qty_price_match.group(2).replace(' ', '')
         
-        # Find all decimal numbers
-        numbers = re.findall(r'(\d+[,.]\d+|\d+)(?:\s*%)?', line)
-        numbers = [n.replace(',', '.') for n in numbers]
+        # Process quantity
+        qty = float(qty_str.replace(',', '.'))
         
-        # Convert to float, excluding the item number
-        numbers = [float(n) for n in numbers if float(n) != item_no]
+        # Process unit price with thousand separators
+        if ',' in price_str and '.' in price_str:
+            # European format (1.234,56)
+            if price_str.index('.') < price_str.index(','):
+                price_str = price_str.replace('.', '').replace(',', '.')
+            # US/UK format (1,234.56)
+            else:
+                price_str = price_str.replace(',', '')
+        elif ',' in price_str:
+            if len(price_str.split(',')[1]) <= 2:
+                price_str = price_str.replace(',', '.')
+            else:
+                price_str = price_str.replace(',', '')
+                
+        unit_price = float(price_str)
+        
+        # Find all decimal numbers (including those with thousand separators)
+        numbers = re.findall(r'(\d{1,3}(?:[., ]\d{3})*(?:[,.]\d+)?|\d+)(?:\s*%)?', line)
+        
+        # Process numbers considering thousand separators
+        clean_numbers = []
+        for n in numbers:
+            # Remove spaces
+            n = n.replace(' ', '')
+            
+            # If number has both comma and dot
+            if ',' in n and '.' in n:
+                # European format (1.234,56)
+                if n.index('.') < n.index(','):
+                    n = n.replace('.', '').replace(',', '.')
+                # US/UK format (1,234.56)
+                else:
+                    n = n.replace(',', '')
+            # If only comma, treat as decimal if it's near the end
+            elif ',' in n:
+                if len(n.split(',')[1]) <= 2:
+                    n = n.replace(',', '.')
+                else:
+                    n = n.replace(',', '')
+                    
+            try:
+                num = float(n)
+                if num != item_no:  # Exclude item number
+                    clean_numbers.append(num)
+            except ValueError:
+                continue
+                
+        numbers = clean_numbers
         
         # Find VAT percentage
         vat_match = re.search(r'(\d+)\s*%', line)
@@ -579,15 +638,52 @@ def parse_items(text: str) -> List[Dict[str, Any]]:
     """
     items = []
     
-    # Try to find the items section using various markers
-    section_markers = [
-        ('ITEMS', 'SUMMARY'),
-        ('ITEMS', 'Total'),
-        ('No.', 'SUMMARY'),
-        ('Item No', 'SUMMARY'),
-        ('Description', 'SUMMARY'),
-        ('Products', 'SUMMARY')
+    # First try to find items section using various methods
+    items_section = None
+    
+    # Method 1: Look for standard markers
+    standard_patterns = [
+        (r'ITEMS(.*?)(?=SUMMARY|Total|$)', re.IGNORECASE | re.DOTALL),
+        (r'Description.*?Qty.*?Price(.*?)(?=SUMMARY|Total|$)', re.IGNORECASE | re.DOTALL),
+        (r'No\.\s+Description(.*?)(?=SUMMARY|Total|$)', re.IGNORECASE | re.DOTALL)
     ]
+    
+    for pattern, flags in standard_patterns:
+        match = re.search(pattern, text, flags)
+        if match:
+            section = match.group(1).strip()
+            if section and len(section) > 50:  # Reasonable minimum length
+                items_section = section
+                break
+    
+    # Method 2: Look for numbered lines if no section found
+    if not items_section:
+        lines = text.split('\n')
+        numbered_lines = []
+        in_items = False
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Skip headers
+            if re.match(r'^(No\.|Description|Qty|Price|Amount|\-+)$', line, re.IGNORECASE):
+                continue
+            
+            # Start collecting at first numbered line
+            if re.match(r'^\s*\d+[\.\)]\s+\S+', line):
+                in_items = True
+                numbered_lines.append(line)
+            # Continue if we're in items section and line has numbers
+            elif in_items and re.search(r'\d+[.,]\d+', line):
+                numbered_lines.append(line)
+            # Stop if we hit summary
+            elif in_items and re.search(r'SUMMARY|Total|Subtotal', line, re.IGNORECASE):
+                break
+        
+        if numbered_lines:
+            items_section = '\n'.join(numbered_lines)
     
     # Also look for table headers
     table_headers = [
@@ -597,17 +693,15 @@ def parse_items(text: str) -> List[Dict[str, Any]]:
         r'^\s*\d+\.\s+\S+.*?\d+\s*each\s+\d+',
     ]
     
-    # Try to find the items section
-    items_section = None
-    
-    # First try with section markers
-    for start, end in section_markers:
-        items_section = extract_section(text, start, end)
-        if items_section and len(items_section.strip()) > 0:
-            # Check if we have actual item lines
-            if re.search(r'^\s*\d+[\.\)]\s+\S+.*?\d+', items_section.strip(), re.MULTILINE):
-                break
-            items_section = None
+    # Process found section if any
+    if not items_section:
+        print("Debug: No items section found in text")
+        return items
+        
+    print("\nDebug: Items section found:")
+    print("=" * 50)
+    print(items_section)
+    print("=" * 50 + "\n")
     
     # If not found, look for table headers
     if not items_section:
@@ -722,13 +816,46 @@ def parse_items(text: str) -> List[Dict[str, Any]]:
         print(line)
     print("-" * 50 + "\n")
     
-    # Parse each line
-    for line in combined_lines:
-        item = parse_item_line(line)
+    # Process each line
+    lines = items_section.split('\n')
+    current_item = []
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Skip headers and dividers
+        if re.match(r'^(No\.|Description|Qty|Price|Amount|\-+|\|)', line, re.IGNORECASE):
+            continue
+            
+        # If line starts with number, it's a new item
+        if re.match(r'^\s*\d+[\.\)]\s+\S+', line):
+            # Process previous item if exists
+            if current_item:
+                item = parse_simple_item_line(' '.join(current_item))
+                if item:
+                    items.append(item)
+            current_item = [line]
+        else:
+            # Might be continuation of previous item
+            current_item.append(line)
+    
+    # Process last item
+    if current_item:
+        item = parse_simple_item_line(' '.join(current_item))
         if item:
             items.append(item)
     
-    print(f"\nDebug: Parsed {len(items)} items\n")
+    # Try alternate parser for any unparsed lines
+    if not items:
+        for line in lines:
+            if line.strip():
+                item = parse_item_line(line.strip())
+                if item:
+                    items.append(item)
+    
+    print(f"\nDebug: Successfully parsed {len(items)} items")
     return items
 
 def parse_totals(text: str, items: List[Dict[str, Any]]) -> Dict[str, float]:
@@ -1025,12 +1152,59 @@ def display_dataframes(dataframes: Dict[str, pd.DataFrame]):
 
 def save_to_excel(dataframes: Dict[str, pd.DataFrame], filename: str = 'invoice_data.xlsx'):
     """
-    Save to Excel file
+    Save to Excel file with auto-fitted columns
     """
     with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-        dataframes['header'].to_excel(writer, sheet_name='Header', index=False)
-        dataframes['items'].to_excel(writer, sheet_name='Items', index=False)
-        dataframes['summary'].to_excel(writer, sheet_name='Summary', index=False)
+        # Write DataFrames to a single sheet
+        sheet_name = 'Invoice'
+        
+        # Write header section
+        dataframes['header'].to_excel(writer, sheet_name=sheet_name, index=False)
+        header_rows = len(dataframes['header']) + 1  # +1 for column header
+        
+        # Write items section
+        if not dataframes['items'].empty:
+            dataframes['items'].to_excel(writer, sheet_name=sheet_name, 
+                                      startrow=header_rows + 1, index=False)
+            items_rows = len(dataframes['items']) + 1
+        else:
+            items_rows = 0
+            
+        # Write summary section
+        dataframes['summary'].to_excel(writer, sheet_name=sheet_name,
+                                     startrow=header_rows + items_rows + 2, index=False)
+        
+        # Auto-fit columns
+        worksheet = writer.sheets[sheet_name]
+        
+        # Function to get column letter
+        def get_column_letter(idx):
+            result = ""
+            while idx > 0:
+                idx, remainder = divmod(idx - 1, 26)
+                result = chr(65 + remainder) + result
+            return result
+        
+        # Process each DataFrame
+        dfs_info = [
+            (dataframes['header'], 0),
+            (dataframes['items'], header_rows + 1),
+            (dataframes['summary'], header_rows + items_rows + 2)
+        ]
+        
+        for df, start_row in dfs_info:
+            if not df.empty:
+                for idx, col in enumerate(df.columns, 1):
+                    column = get_column_letter(idx)
+                    max_length = max(
+                        len(str(col)),  # Column header
+                        df[col].astype(str).str.len().max()  # Content
+                    )
+                    # Add padding and set width
+                    adjusted_width = max_length + 4
+                    current_width = worksheet.column_dimensions[column].width
+                    worksheet.column_dimensions[column].width = max(adjusted_width, 
+                                                                 current_width or 0)
     
     print(f"✓ Data saved to {filename}")
 
@@ -1118,7 +1292,7 @@ def process_invoice_image(image_path: str, save_excel: bool = False,
 
 # Example usage
 if __name__ == "__main__":
-    image_path = r"C:\Users\user\Desktop\final ocr\batch1-0027.jpg"  # تحديث المسار
+    image_path = r"C:\Users\user\Desktop\final ocr\batch1-0002.jpg"  # تحديث المسار
     
     print(f"\nProcessing image: {image_path}")  # طباعة المسار للتأكد
     

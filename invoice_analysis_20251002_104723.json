@@ -1,0 +1,74 @@
+{
+    "invoice_number": [
+        "51109338"
+    ],
+    "date": [
+        "2013-04-13"
+    ],
+    "total": [
+        5.0
+    ],
+    "seller_name": [
+        "Client:"
+    ],
+    "seller_address": [
+        "Andrews, Kirby and Valdez Becker Ltd 58861 Gonzalez Prairie 8012 Stewart Summit Apt. 455 Lake Daniellefurt, IN 57228 North Douglas, AZ 95355"
+    ],
+    "seller_phone": [
+        ""
+    ],
+    "product_names": [
+        "CLEARANCE! Fast Dell Desktop 209,00 627,00 689,70 Computer PC DUAL CORE WINDOWS 10 4/8/16GB RAM",
+        "HP 7520 Thin Client Computer 37,75 188,75 207,63 TESTED !!READ BELOW!!",
+        "gaming pc desktop computer 400,00 400,00 440,00",
+        "12-Core Gaming Computer 464,89 1 394,67 1534,14 Desktop PC Tower Affordable GAMING PC 8GB AMD Vega RGB",
+        "Custom Build Dell Optiplex 9020 221,99 1 109,95 1 220,95 Computer PC",
+        "Dell Optiplex 990 MT Computer 269,95 1 079,80 1 187,78 2TB HD Windows 10 Pro",
+        "Dell Core 2 Duo Desktop 168,00 840,00 924,00 Computer [ Windows XP Pro | 4GB | 500GB"
+    ],
+    "quantities": [
+        3.0,
+        5.0,
+        1.0,
+        3.0,
+        5.0,
+        4.0,
+        5.0
+    ],
+    "unit_prices": [
+        3.0,
+        5.0,
+        1.0,
+        3.0,
+        5.0,
+        4.0,
+        5.0
+    ],
+    "vat": [
+        "10",
+        "10",
+        "10",
+        "10",
+        "10",
+        "10",
+        "10"
+    ],
+    "discount": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+    ],
+    "total_per_item": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+    ]
+}
